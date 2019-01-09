@@ -1,0 +1,4 @@
+github.com/fluent/fluent-bit-go v0.0.0-20181024214935-51032bd05190 h1:3pSPCxrWME3mqNIi4bDKRcKy3N4Y6iMQeyeifW6dUdo=
+github.com/fluent/fluent-bit-go v0.0.0-20181024214935-51032bd05190/go.mod h1:JVF1Nl3QOPpKTR8xDjhkm0xINYUX0z4XdJvOpIUF+Eo=
+github.com/ugorji/go/codec v0.0.0-20181209151446-772ced7fd4c2 h1:EICbibRW4JNKMcY+LsWmuwob+CRS1BmdRdjphAm9mH4=
+github.com/ugorji/go/codec v0.0.0-20181209151446-772ced7fd4c2/go.mod h1:VFNgLljTbGfSG7qAOspJ7OScBnGdDN/yBr0sguwnwf0=
