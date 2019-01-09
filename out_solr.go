@@ -18,28 +18,45 @@ import (
 	"C"
 	"fmt"
 	"github.com/fluent/fluent-bit-go/output"
+	"github.com/ugorji/go/codec"
 	"unsafe"
 )
 
 //export FLBPluginRegister
 func FLBPluginRegister(ctx unsafe.Pointer) int {
-	return output.FLBPluginRegister(ctx, "solr", "Solr output GO!")
+	return output.FLBPluginRegister(ctx, "solr", "Solr Output")
 }
 
 //export FLBPluginInit
 func FLBPluginInit(ctx unsafe.Pointer) int {
 	// Example to retrieve an optional configuration parameter
-	param := output.FLBPluginConfigKey(ctx, "param")
-	fmt.Printf("[flb-go] plugin parameter = '%s'\n", param)
+	//param := output.FLBPluginConfigKey(ctx, "param")
+	//fmt.Printf("[flb-go] plugin parameter = '%s'\n", param)
 	return output.FLB_OK
 }
 
 //export FLBPluginFlush
 func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
-	fmt.Println("Do something")
+	var bytesData []byte
+	var h codec.MsgpackHandle
+	var message interface{}
+
+	bytesData = C.GoBytes(data, length)
+	dec := codec.NewDecoderBytes(bytesData, &h)
+	err := dec.Decode(&message)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	fmt.Println("Processing Data")
+	fmt.Println(bytesData)
+	fmt.Println(message)
+
+
 	return 0
 }
 
+//export FLBPluginExit
 func FLBPluginExit() int {
 	return 0
 }
