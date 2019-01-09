@@ -23,7 +23,7 @@ import (
 
 //export FLBPluginRegister
 func FLBPluginRegister(ctx unsafe.Pointer) int {
-	return output.FLBPluginRegister(ctx, "gsolrout", "Solr output GO!")
+	return output.FLBPluginRegister(ctx, "solr", "Solr output GO!")
 }
 
 //export FLBPluginInit
