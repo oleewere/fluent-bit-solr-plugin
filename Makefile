@@ -11,4 +11,7 @@
 # limitations under the License.
 
 build:
-	go build -buildmode=c-shared -o out_solr.so out_solr.go
+	go build -buildmode=c-shared -ldflags="-s -w" -o out_solr.so out_solr.go
+
+clean:
+	rm -rf *.so *.h *~
