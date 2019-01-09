@@ -18,9 +18,12 @@ import (
 	"C"
 	"fmt"
 	"github.com/fluent/fluent-bit-go/output"
+	"github.com/oleewere/go-solr-client/solr"
 	"github.com/ugorji/go/codec"
 	"unsafe"
 )
+
+var solrClient *solr.SolrClient
 
 //export FLBPluginRegister
 func FLBPluginRegister(ctx unsafe.Pointer) int {
@@ -51,7 +54,6 @@ func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 	fmt.Println("Processing Data")
 	fmt.Println(bytesData)
 	fmt.Println(message)
-
 
 	return 0
 }
