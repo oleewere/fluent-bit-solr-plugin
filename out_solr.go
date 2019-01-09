@@ -16,9 +16,9 @@ package main
 
 import (
 	"C"
-	"unsafe"
 	"fmt"
 	"github.com/fluent/fluent-bit-go/output"
+	"unsafe"
 )
 
 //export FLBPluginRegister
@@ -36,7 +36,8 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 
 //export FLBPluginFlush
 func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
-  fmt.Println("Do something")
+	fmt.Println("Do something")
+	return 0
 }
 
 func FLBPluginExit() int {
