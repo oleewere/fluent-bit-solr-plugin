@@ -10,4 +10,10 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# generated C files
+*.so
+*.h
+
+# IntelliJ
 .idea/
