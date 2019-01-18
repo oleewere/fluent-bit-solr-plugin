@@ -17,18 +17,24 @@ package main
 import (
 	"C"
 	"encoding/binary"
+	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/fluent/fluent-bit-go/output"
+	"github.com/oleewere/go-buffered-processor/processor"
 	"github.com/oleewere/go-solr-client/solr"
+	"github.com/satori/go.uuid"
 	"github.com/ugorji/go/codec"
 	"log"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
 )
 
 var solrClient *solr.SolrClient
 var solrConfig solr.SolrConfig
+var batchContext *processor.BatchContext
+var proc SolrDataProcessor
 
 //export FLBPluginRegister
 func FLBPluginRegister(ctx unsafe.Pointer) int {
@@ -49,7 +55,13 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 	solrConfig.Collection = collection
 	solrConfig.Url = url
 	log.Printf("Solr output URL: %s, Context: %s, Collection: %s", solrConfig.Url, solrConfig.SolrUrlContext, solrConfig.Collection)
+	solrClient, _ = solr.NewSolrClient(&solrConfig)
+	batchContext = processor.CreateDefaultBatchContext()
+	batchContext.MaxBufferSize = 1
+	batchContext.MaxRetries = 20
+	batchContext.RetryTimeInterval = 10
 
+	proc = SolrDataProcessor{SolrClient: solrClient, Mutex: &sync.Mutex{}}
 	return output.FLB_OK
 }
 
@@ -59,6 +71,10 @@ func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 	_, timestamp, record := GetRecord(dec)
 	spew.Dump(timestamp)
 	spew.Dump(record)
+
+	log.Println(record)
+
+	processor.ProcessData(record, batchContext, proc)
 
 	return output.FLB_OK
 }
@@ -109,7 +125,7 @@ func NewDecoder(data unsafe.Pointer, length C.int) *FLBDecoder {
 	return dec
 }
 
-func GetRecord(dec *FLBDecoder) (ret int, ts interface{}, rec map[interface{}]interface{}) {
+func GetRecord(dec *FLBDecoder) (ret int, ts interface{}, rec map[string]string) {
 	var check error
 	var m interface{}
 
@@ -122,9 +138,37 @@ func GetRecord(dec *FLBDecoder) (ret int, ts interface{}, rec map[interface{}]in
 	t := slice.Index(0).Interface()
 	data := slice.Index(1)
 
-	map_data := data.Interface().(map[interface{}]interface{})
+	mapInterfaceData := data.Interface().(map[interface{}]interface{})
 
-	return 0, t, map_data
+	mapData := make(map[string]string)
+
+	for kData, vData := range mapInterfaceData {
+		mapData[kData.(string)] = string(vData.([]uint8))
+	}
+
+	mapData["id"] = uuid.NewV4().String()
+
+	return 0, t, mapData
+}
+
+// SolrDataProcessor type for processing Solr data
+type SolrDataProcessor struct {
+	Mutex      *sync.Mutex
+	SolrClient *solr.SolrClient
+}
+
+// Process send gathered data to Solr
+func (p SolrDataProcessor) Process(batchContext *processor.BatchContext) error {
+	p.Mutex.Lock()
+	defer p.Mutex.Unlock()
+	log.Println(batchContext.BufferData)
+	_, _, err := p.SolrClient.Update(batchContext.BufferData, nil, true)
+	return err
+}
+
+// HandleError handle errors during time based buffer processing (it is not used by this generator)
+func (p SolrDataProcessor) HandleError(batchContext *processor.BatchContext, err error) {
+	fmt.Println(err)
 }
 
 func main() {
