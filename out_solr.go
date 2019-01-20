@@ -112,7 +112,11 @@ func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 		}
 	}
 	if useBufferedProcessor != "true" {
-		solrClient.Update(records, nil, true)
+		_, _, solrErr := solrClient.Update(records, nil, true)
+		if solrErr != nil {
+			log.Println(solrErr)
+			return output.FLB_RETRY
+		}
 	}
 
 	return output.FLB_OK
