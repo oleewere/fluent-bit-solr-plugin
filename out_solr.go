@@ -18,12 +18,12 @@ import (
 	"C"
 	"encoding/binary"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/fluent/fluent-bit-go/output"
 	"github.com/oleewere/go-buffered-processor/processor"
 	"github.com/oleewere/go-solr-client/solr"
 	"github.com/satori/go.uuid"
 	"github.com/ugorji/go/codec"
+	"io"
 	"log"
 	"reflect"
 	"sync"
@@ -35,6 +35,8 @@ var solrClient *solr.SolrClient
 var solrConfig solr.SolrConfig
 var batchContext *processor.BatchContext
 var proc SolrDataProcessor
+var useEpoch string
+var timeSolrField string
 
 //export FLBPluginRegister
 func FLBPluginRegister(ctx unsafe.Pointer) int {
@@ -46,11 +48,16 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 	collection := output.FLBPluginConfigKey(ctx, "Collection")
 	url := output.FLBPluginConfigKey(ctx, "Url")
 	urlContext := output.FLBPluginConfigKey(ctx, "Context")
+	useEpoch = output.FLBPluginConfigKey(ctx, "Epoch")
+	timeSolrField = output.FLBPluginConfigKey(ctx, "TimeSolrField")
 	solrConfig = solr.SolrConfig{}
 	if len(urlContext) > 0 {
 		solrConfig.SolrUrlContext = urlContext
 	} else {
 		solrConfig.SolrUrlContext = "/solr"
+	}
+	if len(timeSolrField) == 0 {
+		timeSolrField = "logtime"
 	}
 	solrConfig.Collection = collection
 	solrConfig.Url = url
@@ -61,20 +68,41 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 	batchContext.MaxRetries = 20
 	batchContext.RetryTimeInterval = 10
 
+	// time based processing
+	batchContext.ProcessTimeInterval = 60 * time.Second
+	batchContext.TimeBasedProcessing = true
+
 	proc = SolrDataProcessor{SolrClient: solrClient, Mutex: &sync.Mutex{}}
+	go processor.StartTimeBasedProcessing(batchContext, proc, 60*time.Second)
 	return output.FLB_OK
 }
 
 //export FLBPluginFlush
 func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 	dec := NewDecoder(data, length)
-	_, timestamp, record := GetRecord(dec)
-	spew.Dump(timestamp)
-	spew.Dump(record)
 
-	log.Println(record)
+	for {
+		var m interface{}
 
-	processor.ProcessData(record, batchContext, proc)
+		err := dec.mpdec.Decode(&m)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Print("Failed to decode msgpack data: %v\n", err)
+			return output.FLB_ERROR
+		}
+
+		_, timestamp, record := GetRecord(m)
+
+		if useEpoch == "true" {
+			dateTimestamp := timestamp.(FLBTime).Time.Unix()
+			record[timeSolrField] = fmt.Sprint(dateTimestamp)
+		} else {
+			record[timeSolrField] = timestamp.(FLBTime).Time.Format("2006-01-02T15:04:05.000")
+		}
+		processor.ProcessData(record, batchContext, proc)
+	}
 
 	return output.FLB_OK
 }
@@ -125,15 +153,7 @@ func NewDecoder(data unsafe.Pointer, length C.int) *FLBDecoder {
 	return dec
 }
 
-func GetRecord(dec *FLBDecoder) (ret int, ts interface{}, rec map[string]string) {
-	var check error
-	var m interface{}
-
-	check = dec.mpdec.Decode(&m)
-	if check != nil {
-		return -1, 0, nil
-	}
-
+func GetRecord(m interface{}) (ret int, ts interface{}, rec map[string]string) {
 	slice := reflect.ValueOf(m)
 	t := slice.Index(0).Interface()
 	data := slice.Index(1)
@@ -161,14 +181,13 @@ type SolrDataProcessor struct {
 func (p SolrDataProcessor) Process(batchContext *processor.BatchContext) error {
 	p.Mutex.Lock()
 	defer p.Mutex.Unlock()
-	log.Println(batchContext.BufferData)
 	_, _, err := p.SolrClient.Update(batchContext.BufferData, nil, true)
 	return err
 }
 
 // HandleError handle errors during time based buffer processing (it is not used by this generator)
 func (p SolrDataProcessor) HandleError(batchContext *processor.BatchContext, err error) {
-	fmt.Println(err)
+	log.Println(err)
 }
 
 func main() {
