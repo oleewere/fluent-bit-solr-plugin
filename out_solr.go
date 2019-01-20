@@ -36,6 +36,7 @@ var solrConfig solr.SolrConfig
 var batchContext *processor.BatchContext
 var proc SolrDataProcessor
 var useEpoch string
+var useBufferedProcessor string
 var timeSolrField string
 
 //export FLBPluginRegister
@@ -49,6 +50,7 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 	url := output.FLBPluginConfigKey(ctx, "Url")
 	urlContext := output.FLBPluginConfigKey(ctx, "Context")
 	useEpoch = output.FLBPluginConfigKey(ctx, "Epoch")
+	useBufferedProcessor = output.FLBPluginConfigKey(ctx, "BufferedProcessor")
 	timeSolrField = output.FLBPluginConfigKey(ctx, "TimeSolrField")
 	solrConfig = solr.SolrConfig{}
 	if len(urlContext) > 0 {
@@ -71,15 +73,17 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 	// time based processing
 	batchContext.ProcessTimeInterval = 60 * time.Second
 	batchContext.TimeBasedProcessing = true
-
-	proc = SolrDataProcessor{SolrClient: solrClient, Mutex: &sync.Mutex{}}
-	go processor.StartTimeBasedProcessing(batchContext, proc, 60*time.Second)
+	if useBufferedProcessor == "true" {
+		proc = SolrDataProcessor{SolrClient: solrClient, Mutex: &sync.Mutex{}}
+		go processor.StartTimeBasedProcessing(batchContext, proc, 60*time.Second)
+	}
 	return output.FLB_OK
 }
 
 //export FLBPluginFlush
 func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 	dec := NewDecoder(data, length)
+	records := make([]map[string]string, 0)
 
 	for {
 		var m interface{}
@@ -101,7 +105,14 @@ func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 		} else {
 			record[timeSolrField] = timestamp.(FLBTime).Time.Format("2006-01-02T15:04:05.000")
 		}
-		processor.ProcessData(record, batchContext, proc)
+		if useBufferedProcessor == "true" {
+			processor.ProcessData(record, batchContext, proc)
+		} else {
+			records = append(records, record)
+		}
+	}
+	if useBufferedProcessor != "true" {
+		solrClient.Update(records, nil, true)
 	}
 
 	return output.FLB_OK
