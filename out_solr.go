@@ -19,24 +19,19 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/fluent/fluent-bit-go/output"
-	"github.com/oleewere/go-buffered-processor/processor"
 	"github.com/oleewere/go-solr-client/solr"
 	"github.com/satori/go.uuid"
 	"github.com/ugorji/go/codec"
 	"io"
 	"log"
 	"reflect"
-	"sync"
 	"time"
 	"unsafe"
 )
 
 var solrClient *solr.SolrClient
 var solrConfig solr.SolrConfig
-var batchContext *processor.BatchContext
-var proc SolrDataProcessor
 var useEpoch string
-var useBufferedProcessor string
 var timeSolrField string
 
 //export FLBPluginRegister
@@ -50,7 +45,6 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 	url := output.FLBPluginConfigKey(ctx, "Url")
 	urlContext := output.FLBPluginConfigKey(ctx, "Context")
 	useEpoch = output.FLBPluginConfigKey(ctx, "Epoch")
-	useBufferedProcessor = output.FLBPluginConfigKey(ctx, "BufferedProcessor")
 	timeSolrField = output.FLBPluginConfigKey(ctx, "TimeSolrField")
 	solrConfig = solr.SolrConfig{}
 	if len(urlContext) > 0 {
@@ -65,18 +59,7 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 	solrConfig.Url = url
 	log.Printf("Solr output URL: %s, Context: %s, Collection: %s", solrConfig.Url, solrConfig.SolrUrlContext, solrConfig.Collection)
 	solrClient, _ = solr.NewSolrClient(&solrConfig)
-	batchContext = processor.CreateDefaultBatchContext()
-	batchContext.MaxBufferSize = 1
-	batchContext.MaxRetries = 20
-	batchContext.RetryTimeInterval = 10
 
-	// time based processing
-	batchContext.ProcessTimeInterval = 60 * time.Second
-	batchContext.TimeBasedProcessing = true
-	if useBufferedProcessor == "true" {
-		proc = SolrDataProcessor{SolrClient: solrClient, Mutex: &sync.Mutex{}}
-		go processor.StartTimeBasedProcessing(batchContext, proc, 60*time.Second)
-	}
 	return output.FLB_OK
 }
 
@@ -84,10 +67,8 @@ func FLBPluginInit(ctx unsafe.Pointer) int {
 func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 	dec := NewDecoder(data, length)
 	records := make([]map[string]string, 0)
-
 	for {
 		var m interface{}
-
 		err := dec.mpdec.Decode(&m)
 		if err != nil {
 			if err == io.EOF {
@@ -105,18 +86,12 @@ func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 		} else {
 			record[timeSolrField] = timestamp.(FLBTime).Time.Format("2006-01-02T15:04:05.000")
 		}
-		if useBufferedProcessor == "true" {
-			processor.ProcessData(record, batchContext, proc)
-		} else {
-			records = append(records, record)
-		}
+		records = append(records, record)
 	}
-	if useBufferedProcessor != "true" {
-		_, _, solrErr := solrClient.Update(records, nil, true)
-		if solrErr != nil {
-			log.Println(solrErr)
-			return output.FLB_RETRY
-		}
+	_, _, solrErr := solrClient.Update(records, nil, true)
+	if solrErr != nil {
+		log.Println(solrErr)
+		return output.FLB_RETRY
 	}
 
 	return output.FLB_OK
@@ -155,6 +130,7 @@ func (f FLBTime) UpdateExt(dest interface{}, v interface{}) {
 	panic("unsupported")
 }
 
+// NewDecoder create a decoder to gather data from
 func NewDecoder(data unsafe.Pointer, length C.int) *FLBDecoder {
 	var b []byte
 
@@ -168,6 +144,7 @@ func NewDecoder(data unsafe.Pointer, length C.int) *FLBDecoder {
 	return dec
 }
 
+// GetRecord obtain record/timestamp from messagePack and add generated id to the solr document
 func GetRecord(m interface{}) (ret int, ts interface{}, rec map[string]string) {
 	slice := reflect.ValueOf(m)
 	t := slice.Index(0).Interface()
@@ -184,25 +161,6 @@ func GetRecord(m interface{}) (ret int, ts interface{}, rec map[string]string) {
 	mapData["id"] = uuid.NewV4().String()
 
 	return 0, t, mapData
-}
-
-// SolrDataProcessor type for processing Solr data
-type SolrDataProcessor struct {
-	Mutex      *sync.Mutex
-	SolrClient *solr.SolrClient
-}
-
-// Process send gathered data to Solr
-func (p SolrDataProcessor) Process(batchContext *processor.BatchContext) error {
-	p.Mutex.Lock()
-	defer p.Mutex.Unlock()
-	_, _, err := p.SolrClient.Update(batchContext.BufferData, nil, true)
-	return err
-}
-
-// HandleError handle errors during time based buffer processing (it is not used by this generator)
-func (p SolrDataProcessor) HandleError(batchContext *processor.BatchContext, err error) {
-	log.Println(err)
 }
 
 func main() {
