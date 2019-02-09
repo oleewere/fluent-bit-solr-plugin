@@ -3,4 +3,4 @@ services:
   - docker
 install:
   - docker --version
-  - docker build oleewere/fluent-bit-solr-plugin .
+  - docker build -t oleewere/fluent-bit-solr-plugin .
