@@ -1,6 +1,4 @@
-sudo: required
-services:
-  - docker
-install:
-  - docker --version
-  - docker build -t oleewere/fluent-bit-solr-plugin .
+language: go
+go:
+  - "1.11.x"
+script: make build
