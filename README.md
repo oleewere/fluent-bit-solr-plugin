@@ -8,11 +8,11 @@ Fluent Bit Solr plugin
 
 #### Properties
 
-- Url: url of the Solr host (or proxy)
-- Collection: Solr collection
-- Context: Context (uri) for the URL. Default `/solr`
-- TimeSolrField: Field name that will be generated for the documents as timestamp. (Default format: `2006-01-02T15:04:05.000`)
-- Epoch: Use unix epoch for the `TimeSolrField`. Default: `false`
+- `Url`: url of the Solr host (or proxy)
+- `Collection`: Solr collection
+- `Context`: Context (uri) for the URL. Default `/solr`
+- `TimeSolrField`: Field name that will be generated for the documents as timestamp. (Default format: `2006-01-02T15:04:05.000`)
+- `Epoch`: Use unix epoch for the `TimeSolrField`. Default: `false`
 
 #### Usage
 
